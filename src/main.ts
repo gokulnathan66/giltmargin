@@ -1,6 +1,6 @@
 import { Editor, Notice, Platform, Plugin, WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, type GiltmarginSettings } from "./models";
-import { readApiKey, writeApiKey } from "./secrets";
+import { migrateLegacyApiKey, readApiKey, writeApiKey } from "./secrets";
 import { GiltmarginSettingTab } from "./settings";
 import { GiltmarginView, VIEW_TYPE_GILTMARGIN } from "./view";
 
@@ -11,6 +11,7 @@ export default class GiltmarginPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    migrateLegacyApiKey(this.app.secretStorage, window.localStorage, this.app.vault.getName());
     this.registerView(VIEW_TYPE_GILTMARGIN, (leaf) => new GiltmarginView(leaf, this));
     this.addSettingTab(new GiltmarginSettingTab(this.app, this));
 
@@ -71,7 +72,7 @@ export default class GiltmarginPlugin extends Plugin {
 
   getApiKey(): string {
     try {
-      return readApiKey(localStorage, this.app.vault.getName());
+      return readApiKey(this.app.secretStorage);
     } catch {
       return "";
     }
@@ -79,7 +80,7 @@ export default class GiltmarginPlugin extends Plugin {
 
   setApiKey(apiKey: string): void {
     try {
-      writeApiKey(localStorage, this.app.vault.getName(), apiKey);
+      writeApiKey(this.app.secretStorage, apiKey);
     } catch (error) {
       new Notice(error instanceof Error ? error.message : "Could not store the API key.");
     }
@@ -87,7 +88,17 @@ export default class GiltmarginPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const stored = (await this.loadData()) as Partial<GiltmarginSettings> | null;
-    this.settings = { ...DEFAULT_SETTINGS, ...stored };
+    const merged = { ...DEFAULT_SETTINGS, ...stored };
+    this.settings = {
+      model: merged.model,
+      includeActiveNote: merged.includeActiveNote,
+      noteCharLimit: merged.noteCharLimit,
+      searchVault: merged.searchVault,
+      maxRelatedNotes: merged.maxRelatedNotes,
+      relatedNotesCharLimit: merged.relatedNotesCharLimit,
+      excludedFolders: merged.excludedFolders,
+    };
+    await this.saveSettings();
   }
 
   async saveSettings(): Promise<void> {

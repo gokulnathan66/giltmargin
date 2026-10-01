@@ -1,15 +1,19 @@
 export interface GiltmarginSettings {
-  repoUrl: string;
-  branch: string;
   model: string;
   includeActiveNote: boolean;
   noteCharLimit: number;
+  searchVault: boolean;
+  maxRelatedNotes: number;
+  relatedNotesCharLimit: number;
+  excludedFolders: string;
 }
 
 export const DEFAULT_SETTINGS: GiltmarginSettings = {
-  repoUrl: "",
-  branch: "main",
   model: "",
   includeActiveNote: true,
   noteCharLimit: 20000,
+  searchVault: true,
+  maxRelatedNotes: 5,
+  relatedNotesCharLimit: 30000,
+  excludedFolders: ".trash",
 };

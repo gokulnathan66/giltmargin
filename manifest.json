@@ -1,9 +1,9 @@
 {
   "id": "giltmargin",
   "name": "Giltmargin",
-  "version": "0.1.0",
-  "minAppVersion": "1.5.0",
-  "description": "Ask a Cursor cloud agent questions about your vault from iPhone, Android, or desktop.",
+  "version": "0.2.0",
+  "minAppVersion": "1.13.0",
+  "description": "Ask a Cursor cloud agent about notes read locally from your vault on mobile or desktop.",
   "author": "gokulnathan66",
   "authorUrl": "https://github.com/gokulnathan66",
   "isDesktopOnly": false

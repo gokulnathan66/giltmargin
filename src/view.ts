@@ -9,8 +9,14 @@ import {
 } from "obsidian";
 import { CursorAgents, buildPrompt, waitForRun, type Http, type RunState } from "./cursor";
 import type GiltmarginPlugin from "./main";
+import {
+  isAllowedVaultPath,
+  selectRelevantNotes,
+  type VaultNote,
+} from "./vault-context";
 
 export const VIEW_TYPE_GILTMARGIN = "giltmargin-chat";
+const CHAT_KEY = "giltmargin.chat.v1";
 
 interface ChatTurn {
   role: "user" | "assistant";
@@ -23,8 +29,9 @@ interface StoredChat {
 }
 
 const STATUS_TEXT: Record<string, string> = {
+  SEARCHING: "Searching notes on this device…",
   CREATING: "Starting a Cursor agent… the first answer can take a minute.",
-  RUNNING: "Reading your vault…",
+  RUNNING: "Writing an answer from the supplied notes…",
 };
 
 export const obsidianHttp: Http = async (req) => {
@@ -55,6 +62,7 @@ export class GiltmarginView extends ItemView {
   private inputEl: HTMLTextAreaElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
   private stopButton: HTMLButtonElement | null = null;
+  private noteCache = new Map<string, { mtime: number; content: string }>();
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -105,8 +113,8 @@ export class GiltmarginView extends ItemView {
     const title = header.createDiv({ cls: "giltmargin-title" });
     title.createDiv({ cls: "giltmargin-mark" });
     const heading = title.createDiv();
-    heading.createEl("div", { cls: "giltmargin-name", text: "Giltmargin" });
-    heading.createEl("div", { cls: "giltmargin-model", text: "Cursor agent · your vault" });
+    heading.createDiv({ cls: "giltmargin-name", text: "Giltmargin" });
+    heading.createDiv({ cls: "giltmargin-model", text: "Cursor agent · your vault" });
 
     const actions = header.createDiv({ cls: "giltmargin-header-actions" });
     this.stopButton = actions.createEl("button", { text: "Stop", cls: "giltmargin-text-button" });
@@ -147,9 +155,9 @@ export class GiltmarginView extends ItemView {
     if (!question) return;
 
     const apiKey = this.plugin.getApiKey();
-    const { repoUrl, branch, model } = this.plugin.settings;
-    if (!apiKey || !repoUrl) {
-      new Notice("Set your Cursor API key and vault repository in Giltmargin settings.");
+    const { model } = this.plugin.settings;
+    if (!apiKey) {
+      new Notice("Set your Cursor API key in Giltmargin settings.");
       return;
     }
 
@@ -161,8 +169,10 @@ export class GiltmarginView extends ItemView {
     const agents = new CursorAgents(obsidianHttp, apiKey);
 
     try {
-      this.setStatus("CREATING");
+      this.setStatus("SEARCHING");
       const prompt = await this.promptFor(question, !this.agentId);
+      if (generation !== this.generation) return;
+      this.setStatus("CREATING");
       let run: RunState;
       if (this.agentId) {
         try {
@@ -171,13 +181,11 @@ export class GiltmarginView extends ItemView {
           // Archived or expired agents cannot take follow-ups; start a fresh one.
           run = await agents.createAgent({
             prompt: await this.promptFor(question, true),
-            repoUrl,
-            branch,
             model,
           });
         }
       } else {
-        run = await agents.createAgent({ prompt, repoUrl, branch, model });
+        run = await agents.createAgent({ prompt, model });
       }
       this.agentId = run.agentId;
       this.activeRun = run;
@@ -234,12 +242,59 @@ export class GiltmarginView extends ItemView {
   }
 
   private async promptFor(question: string, firstTurn: boolean): Promise<string> {
-    const file = this.plugin.settings.includeActiveNote ? this.activeNote() : null;
-    if (!file) return buildPrompt({ question, firstTurn });
-    const raw = await this.app.vault.cachedRead(file);
-    const limit = this.plugin.settings.noteCharLimit;
-    const body = raw.length > limit ? `${raw.slice(0, limit)}\n\n[clipped]` : raw;
-    return buildPrompt({ question, firstTurn, notePath: file.path, noteBody: body });
+    const excludedFolders = this.excludedFolders();
+    const activeFile = this.plugin.settings.includeActiveNote ? this.activeNote() : null;
+    const allowedActive =
+      activeFile && isAllowedVaultPath(activeFile.path, excludedFolders) ? activeFile : null;
+
+    let noteBody: string | undefined;
+    if (allowedActive) {
+      const raw = await this.app.vault.cachedRead(allowedActive);
+      const limit = this.plugin.settings.noteCharLimit;
+      noteBody = raw.length > limit ? `${raw.slice(0, limit)}\n\n[clipped]` : raw;
+    }
+
+    const relatedNotes = this.plugin.settings.searchVault
+      ? selectRelevantNotes(question, await this.readSearchableNotes(excludedFolders), {
+          activePath: allowedActive?.path,
+          maxNotes: this.plugin.settings.maxRelatedNotes,
+          maxTotalChars: this.plugin.settings.relatedNotesCharLimit,
+        })
+      : [];
+
+    return buildPrompt({
+      question,
+      firstTurn,
+      notePath: allowedActive?.path,
+      noteBody,
+      relatedNotes,
+    });
+  }
+
+  private excludedFolders(): string[] {
+    return this.plugin.settings.excludedFolders
+      .split(/[,\n]/)
+      .map((folder) => folder.trim())
+      .filter(Boolean);
+  }
+
+  private async readSearchableNotes(excludedFolders: string[]): Promise<VaultNote[]> {
+    const notes: VaultNote[] = [];
+    const livePaths = new Set<string>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!isAllowedVaultPath(file.path, excludedFolders) || file.stat.size > 300_000) continue;
+      livePaths.add(file.path);
+      let cached = this.noteCache.get(file.path);
+      if (!cached || cached.mtime !== file.stat.mtime) {
+        cached = { mtime: file.stat.mtime, content: await this.app.vault.cachedRead(file) };
+        this.noteCache.set(file.path, cached);
+      }
+      notes.push({ path: file.path, content: cached.content });
+    }
+    for (const path of this.noteCache.keys()) {
+      if (!livePaths.has(path)) this.noteCache.delete(path);
+    }
+    return notes;
   }
 
   private activeNote(): TFile | null {
@@ -279,12 +334,12 @@ export class GiltmarginView extends ItemView {
     if (this.turns.length === 0 && !this.statusText) {
       const empty = host.createDiv({ cls: "giltmargin-empty" });
       empty.createEl("p", { text: "Ask anything about your notes." });
-      const ready = this.plugin.getApiKey() && this.plugin.settings.repoUrl;
+      const ready = this.plugin.getApiKey();
       empty.createEl("p", {
         cls: "giltmargin-empty-sub",
         text: ready
-          ? "A Cursor agent reads your vault repository and answers here."
-          : "Add your Cursor API key and vault repository under Settings → Giltmargin.",
+          ? "Notes are selected locally from this vault and sent with your question."
+          : "Add your Cursor API key under Settings → Giltmargin.",
       });
       return;
     }
@@ -292,7 +347,7 @@ export class GiltmarginView extends ItemView {
     const sourcePath = this.activeNote()?.path ?? "";
     for (const turn of this.turns) {
       const row = host.createDiv({ cls: `giltmargin-turn giltmargin-${turn.role}` });
-      row.createEl("div", {
+      row.createDiv({
         cls: "giltmargin-role",
         text: turn.role === "user" ? "You" : "Cursor",
       });
@@ -305,38 +360,61 @@ export class GiltmarginView extends ItemView {
     }
     if (this.statusText) {
       const pending = host.createDiv({ cls: "giltmargin-turn giltmargin-assistant" });
-      pending.createEl("div", { cls: "giltmargin-role", text: "Cursor" });
-      pending.createEl("div", { cls: "giltmargin-body giltmargin-pending", text: this.statusText });
+      pending.createDiv({ cls: "giltmargin-role", text: "Cursor" });
+      pending.createDiv({ cls: "giltmargin-body giltmargin-pending", text: this.statusText });
     }
     host.scrollTop = host.scrollHeight;
   }
 
-  private chatKey(): string {
-    return `giltmargin.chat.v1.${this.app.vault.getName()}`;
+  private loadChat(): StoredChat {
+    const stored = this.app.loadLocalStorage(CHAT_KEY);
+    if (stored !== null && stored !== undefined) return parseStoredChat(stored);
+    const legacy = this.takeLegacyChat();
+    if (!legacy) return { turns: [] };
+    this.app.saveLocalStorage(CHAT_KEY, legacy);
+    return legacy;
   }
 
-  private loadChat(): StoredChat {
+  private takeLegacyChat(): StoredChat | null {
+    const key = `giltmargin.chat.v1.${this.app.vault.getName()}`;
     try {
-      const raw = localStorage.getItem(this.chatKey());
-      if (!raw) return { turns: [] };
-      const parsed = JSON.parse(raw) as StoredChat;
-      const turns = Array.isArray(parsed.turns)
-        ? parsed.turns.filter(
-            (t) => (t.role === "user" || t.role === "assistant") && typeof t.content === "string",
-          )
-        : [];
-      return { agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined, turns };
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return null;
+      window.localStorage.removeItem(key);
+      const parsed = parseStoredChat(raw);
+      return parsed.turns.length > 0 || parsed.agentId ? parsed : null;
     } catch {
-      return { turns: [] };
+      return null;
     }
   }
 
   private saveChat(): void {
     try {
-      const payload: StoredChat = { agentId: this.agentId, turns: this.turns.slice(-40) };
-      localStorage.setItem(this.chatKey(), JSON.stringify(payload));
+      const payload: StoredChat = { turns: this.turns.slice(-40) };
+      if (this.agentId) payload.agentId = this.agentId;
+      this.app.saveLocalStorage(CHAT_KEY, payload);
     } catch {
-      // A full local storage quota should not block the current chat.
+      // A full storage quota should not block the current chat.
     }
+  }
+}
+
+function parseStoredChat(raw: unknown): StoredChat {
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!parsed || typeof parsed !== "object") return { turns: [] };
+    const record = parsed as { agentId?: unknown; turns?: unknown };
+    const turns = Array.isArray(record.turns)
+      ? record.turns.filter(
+          (turn): turn is ChatTurn =>
+            !!turn &&
+            typeof turn === "object" &&
+            ((turn as ChatTurn).role === "user" || (turn as ChatTurn).role === "assistant") &&
+            typeof (turn as ChatTurn).content === "string",
+        )
+      : [];
+    return { agentId: typeof record.agentId === "string" ? record.agentId : undefined, turns };
+  } catch {
+    return { turns: [] };
   }
 }

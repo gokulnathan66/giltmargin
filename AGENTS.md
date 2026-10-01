@@ -25,7 +25,7 @@ These are the owner's requirements, in priority order. Keep them as the target e
 
 - The [Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints) accepts only a user API key or a team service account key, sent as Basic or Bearer auth. Cursor has no sign-in flow that a third-party app can use to get a token for that API.
 - Cursor supports agents with no repository: omit `repos` and `env` when creating the agent. That fits requirement 3. The plugin sends the note text it read from the vault in the prompt.
-- Until Cursor ships a sign-in for third-party apps, the only working path is a key the owner creates in the Cursor dashboard, stored in device local storage and never in the vault. Switch to SSO as soon as Cursor offers one.
+- Until Cursor ships a sign-in for third-party apps, the only working path is a key the owner creates in the Cursor dashboard, stored in Obsidian SecretStorage and never in the vault. Switch to SSO as soon as Cursor offers one.
 
 ## What the chat does
 
@@ -45,4 +45,7 @@ All network calls go through Obsidian `requestUrl`. `isDesktopOnly` stays `false
 
 ## Current code
 
-`0.1.0` asks for a vault repository URL and points a Cursor agent at that repo. That breaks requirement 3. The next change removes the repository and branch settings, reads notes through the Obsidian vault API, and starts Cursor agents with no repository.
+`0.2.0` removes the repository and branch settings, reads and searches notes through the
+Obsidian vault API, and starts Cursor agents with no repository. The remaining blocked
+requirements are Claude Code on mobile and SSO without an API key; do not claim either is
+implemented until Anthropic or Cursor exposes a permitted third-party sign-in flow.

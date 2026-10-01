@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CursorAgents, apiError, basicAuth, buildPrompt, waitForRun, type Http } from "../src/cursor.ts";
-import { apiKeyStorageKey, readApiKey, writeApiKey } from "../src/secrets.ts";
+import {
+  migrateLegacyApiKey,
+  readApiKey,
+  writeApiKey,
+  type SecretStore,
+} from "../src/secrets.ts";
 
 function recordingHttp(responses: Array<{ status: number; json: unknown }>) {
   const calls: Array<{ method: string; url: string; headers: Record<string, string>; body?: string }> = [];
@@ -21,22 +26,20 @@ describe("basicAuth", () => {
 });
 
 describe("CursorAgents", () => {
-  it("creates a read-only agent on the vault repo", async () => {
+  it("creates a no-repository agent", async () => {
     const { http, calls } = recordingHttp([
       { status: 201, json: { agent: { id: "bc-1" }, run: { id: "run-1", agentId: "bc-1", status: "CREATING" } } },
     ]);
     const run = await new CursorAgents(http, "cursor_k").createAgent({
       prompt: "hi",
-      repoUrl: "https://github.com/me/vault",
-      branch: "main",
       model: "",
     });
     assert.deepEqual(run, { id: "run-1", agentId: "bc-1", status: "CREATING", result: undefined });
     assert.equal(calls[0].url, "https://api.cursor.com/v1/agents");
     const body = JSON.parse(calls[0].body ?? "{}");
-    assert.equal(body.autoCreatePR, false);
     assert.equal(body.model, undefined);
-    assert.deepEqual(body.repos, [{ url: "https://github.com/me/vault", startingRef: "main" }]);
+    assert.equal(body.repos, undefined);
+    assert.equal(body.env, undefined);
   });
 
   it("sends follow-ups to the same agent", async () => {
@@ -88,29 +91,52 @@ describe("waitForRun", () => {
 });
 
 describe("buildPrompt", () => {
-  it("adds read-only instructions only on the first turn", () => {
-    const first = buildPrompt({ question: "Q?", firstTurn: true, notePath: "a.md", noteBody: "body" });
-    assert.match(first, /Do not edit/);
+  it("sends device-read notes and never describes a repository", () => {
+    const first = buildPrompt({
+      question: "Q?",
+      firstTurn: true,
+      notePath: "a.md",
+      noteBody: "body",
+      relatedNotes: [{ path: "b.md", content: "related" }],
+    });
+    assert.match(first, /read-only context supplied by the Obsidian plugin/);
     assert.match(first, /<note path="a.md">\nbody\n<\/note>/);
-    const later = buildPrompt({ question: "Q2?", firstTurn: false });
-    assert.doesNotMatch(later, /Do not edit/);
+    assert.match(first, /<note path="b.md">\nrelated\n<\/note>/);
+    assert.doesNotMatch(first, /repository/i);
+    const later = buildPrompt({ question: "Q2?", firstTurn: false, relatedNotes: [] });
     assert.match(later, /Question: Q2\?/);
   });
 });
 
 describe("api key storage", () => {
-  it("scopes the key per vault and clears it", () => {
+  it("uses Obsidian secret storage and clears the key", () => {
     const memory = new Map<string, string>();
+    const secrets: SecretStore = {
+      getSecret: (id) => memory.get(id) ?? null,
+      setSecret: (id, value) => void memory.set(id, value),
+    };
+    writeApiKey(secrets, "cursor_secret");
+    assert.equal(readApiKey(secrets), "cursor_secret");
+    assert.equal(memory.get("giltmargin-cursor-api-key"), "cursor_secret");
+    writeApiKey(secrets, "");
+    assert.equal(readApiKey(secrets), "");
+  });
+
+  it("moves a 0.1.0 local-storage key into SecretStorage", () => {
+    const memory = new Map<string, string>();
+    const secrets: SecretStore = {
+      getSecret: (id) => memory.get(id) ?? null,
+      setSecret: (id, value) => void memory.set(id, value),
+    };
+    const local = new Map([["giltmargin.cursorKey.v1.My Vault", "cursor_old"]]);
     const storage = {
-      getItem: (k: string) => memory.get(k) ?? null,
-      setItem: (k: string, v: string) => void memory.set(k, v),
-      removeItem: (k: string) => void memory.delete(k),
-    } as unknown as Storage;
-    writeApiKey(storage, "vault-1", "cursor_secret");
-    assert.equal(readApiKey(storage, "vault-1"), "cursor_secret");
-    assert.equal(readApiKey(storage, "vault-2"), "");
-    assert.equal(memory.get(apiKeyStorageKey("vault-1")), "cursor_secret");
-    writeApiKey(storage, "vault-1", "");
-    assert.equal(readApiKey(storage, "vault-1"), "");
+      getItem: (id: string) => local.get(id) ?? null,
+      removeItem: (id: string) => void local.delete(id),
+    };
+
+    migrateLegacyApiKey(secrets, storage, "My Vault");
+
+    assert.equal(readApiKey(secrets), "cursor_old");
+    assert.equal(local.size, 0);
   });
 });

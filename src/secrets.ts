@@ -1,18 +1,32 @@
-const STORAGE_PREFIX = "giltmargin.cursorKey.v1";
+const API_KEY_ID = "giltmargin-cursor-api-key";
 
-export function apiKeyStorageKey(vaultId: string): string {
-  return `${STORAGE_PREFIX}.${vaultId || "default"}`;
+export interface SecretStore {
+  getSecret(id: string): string | null;
+  setSecret(id: string, value: string): void;
 }
 
-export function readApiKey(storage: Storage, vaultId: string): string {
-  return storage.getItem(apiKeyStorageKey(vaultId)) ?? "";
+export interface LegacyStorage {
+  getItem(id: string): string | null;
+  removeItem(id: string): void;
 }
 
-export function writeApiKey(storage: Storage, vaultId: string, apiKey: string): void {
-  const key = apiKeyStorageKey(vaultId);
-  if (!apiKey) {
-    storage.removeItem(key);
-    return;
-  }
-  storage.setItem(key, apiKey);
+export function readApiKey(secrets: SecretStore): string {
+  return secrets.getSecret(API_KEY_ID) ?? "";
+}
+
+export function writeApiKey(secrets: SecretStore, apiKey: string): void {
+  secrets.setSecret(API_KEY_ID, apiKey);
+}
+
+export function migrateLegacyApiKey(
+  secrets: SecretStore,
+  storage: LegacyStorage,
+  vaultId: string,
+): void {
+  if (readApiKey(secrets)) return;
+  const legacyId = `giltmargin.cursorKey.v1.${vaultId || "default"}`;
+  const legacyKey = storage.getItem(legacyId);
+  if (!legacyKey) return;
+  writeApiKey(secrets, legacyKey);
+  storage.removeItem(legacyId);
 }

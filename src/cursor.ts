@@ -51,7 +51,7 @@ function toRun(value: unknown): RunState {
   return {
     id: run.id,
     agentId: run.agentId,
-    status: (run.status ?? "CREATING") as RunStatus,
+    status: run.status ?? "CREATING",
     result: typeof run.result === "string" ? run.result : undefined,
   };
 }
@@ -82,15 +82,11 @@ export class CursorAgents {
 
   async createAgent(args: {
     prompt: string;
-    repoUrl: string;
-    branch: string;
     model: string;
   }): Promise<RunState> {
     const body: Record<string, unknown> = {
       prompt: { text: args.prompt },
       name: "Giltmargin vault chat",
-      repos: [{ url: args.repoUrl, ...(args.branch ? { startingRef: args.branch } : {}) }],
-      autoCreatePR: false,
       mode: "agent",
     };
     if (args.model) body.model = { id: args.model };
@@ -134,7 +130,9 @@ export async function waitForRun(
 ): Promise<RunState> {
   const interval = opts.intervalMs ?? 3000;
   const deadline = Date.now() + (opts.timeoutMs ?? 10 * 60 * 1000);
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep =
+    opts.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)));
   let current = run;
   while (!TERMINAL.has(current.status)) {
     if (opts.isCancelled?.()) return current;
@@ -150,17 +148,25 @@ export function buildPrompt(args: {
   question: string;
   notePath?: string;
   noteBody?: string;
+  relatedNotes: Array<{ path: string; content: string }>;
   firstTurn: boolean;
 }): string {
   const parts: string[] = [];
   if (args.firstTurn) {
     parts.push(
-      "This repository is my Obsidian vault of markdown notes. Answer my questions by reading the notes. Search the vault when the answer may be in other notes, and cite note paths you used as [[wikilinks]]. Do not edit, create, or delete files. Do not commit, push, or open pull requests. Reply in markdown.",
+      "You answer questions about an Obsidian vault using read-only context supplied by the Obsidian plugin on the user's device. You have no direct access to the vault. Base the answer only on supplied notes and general knowledge, clearly distinguish the two, and cite supplied note paths as [[wikilinks]]. Reply in markdown.",
     );
   }
   if (args.notePath && args.noteBody !== undefined) {
     parts.push(
-      `I have "${args.notePath}" open on my phone. This copy may be newer than the repository:\n\n<note path="${args.notePath}">\n${args.noteBody}\n</note>`,
+      `Open note:\n\n<note path="${args.notePath}">\n${args.noteBody}\n</note>`,
+    );
+  }
+  if (args.relatedNotes.length > 0) {
+    parts.push(
+      `Related notes selected locally on the device:\n\n${args.relatedNotes
+        .map((note) => `<note path="${note.path}">\n${note.content}\n</note>`)
+        .join("\n\n")}`,
     );
   }
   parts.push(`Question: ${args.question}`);

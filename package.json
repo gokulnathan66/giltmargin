@@ -1,7 +1,8 @@
 {
   "name": "giltmargin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ask a Cursor cloud agent questions about your vault from iPhone, Android, or desktop.",
+  "type": "module",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
