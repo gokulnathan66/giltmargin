@@ -1,0 +1,206 @@
+/* Giltmargin — gilt edge of a page, readable in light and dark vault themes. */
+
+.workspace-leaf-content[data-type="giltmargin-chat"] .view-content {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.giltmargin-view {
+  height: 100%;
+  padding: 0;
+}
+
+.giltmargin-root {
+  --gm-brass: #b8884a;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(184, 136, 74, 0.1),
+    var(--background-primary) 140px
+  );
+}
+
+.giltmargin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.giltmargin-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.giltmargin-mark {
+  width: 18px;
+  height: 14px;
+  flex: none;
+  background:
+    linear-gradient(var(--gm-brass), var(--gm-brass)) 2px 0 / 14px 2px no-repeat,
+    linear-gradient(var(--gm-brass), var(--gm-brass)) 0 6px / 18px 2px no-repeat,
+    linear-gradient(var(--gm-brass), var(--gm-brass)) 4px 12px / 10px 2px no-repeat;
+}
+
+.giltmargin-name {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-normal);
+}
+
+.giltmargin-model {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.giltmargin-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.giltmargin-text-button,
+.giltmargin-send {
+  min-height: 44px;
+  min-width: 44px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border-radius: 4px;
+  padding: 0 14px;
+  font: inherit;
+}
+
+.giltmargin-send {
+  background: var(--gm-brass);
+  color: #1c140c;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.giltmargin-send:disabled,
+.giltmargin-input:disabled {
+  opacity: 0.6;
+}
+
+.giltmargin-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.giltmargin-empty {
+  margin-top: 18vh;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.giltmargin-empty p {
+  margin: 0 0 8px;
+}
+
+.giltmargin-empty-sub {
+  font-size: 13px;
+}
+
+.giltmargin-turn {
+  margin: 0 0 16px;
+}
+
+.giltmargin-role {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.giltmargin-user {
+  margin-left: 12%;
+  padding: 8px 12px;
+  border-left: 3px solid var(--gm-brass);
+  background: var(--background-secondary);
+}
+
+.giltmargin-user .giltmargin-body {
+  white-space: pre-wrap;
+}
+
+.giltmargin-assistant .giltmargin-body {
+  padding-right: 4px;
+}
+
+.giltmargin-assistant .giltmargin-body > *:first-child {
+  margin-top: 0;
+}
+
+.giltmargin-pending {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.giltmargin-banner {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--text-error, #c45c4a);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
+.giltmargin-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.giltmargin-input {
+  flex: 1;
+  min-height: 44px;
+  max-height: 140px;
+  resize: none;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.giltmargin-settings-note {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-left: 3px solid #b8884a;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.giltmargin-settings-note p {
+  margin: 0 0 8px;
+}
+
+.giltmargin-settings-note p:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  .giltmargin-user {
+    margin-left: 0;
+  }
+}
